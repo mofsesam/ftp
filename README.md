@@ -1,4 +1,6 @@
 # sesam-datasource-ftp
+[![Build Status](https://travis-ci.org/sesam-community/sesam-datasource-ftp.svg?branch=master)](https://travis-ci.org/sesam-community/sesam-datasource-ftp)
+
 sesam Http->Ftp microservice
 
 An example of system config: 
