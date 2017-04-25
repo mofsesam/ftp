@@ -1,5 +1,5 @@
 # sesam-datasource-ftp
-[![Build Status](https://travis-ci.org/sesam-community/sesam-datasource-ftp.svg?branch=master)](https://travis-ci.org/sesam-community/sesam-datasource-ftp)
+[![Build Status](https://travis-ci.org/sesam-community/ftp.svg?branch=master)](https://travis-ci.org/sesam-community/ftp)
  
 sesam Http->Ftp microservice
 
@@ -14,7 +14,7 @@ An example of system config:
     "environment": {
       "sys_id": "ftp://ftp_server_url"
     },
-    "image": "sesam/sesam-datasource-ftp:latest",
+    "image": "sesam/ftp:latest",
     "memory": 64,
     "port": 5000
   },
