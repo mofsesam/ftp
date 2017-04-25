@@ -14,7 +14,7 @@ An example of system config:
     "environment": {
       "sys_id": "ftp://ftp_server_url"
     },
-    "image": "sesam/ftp:latest",
+    "image": "sesamcommunity/ftp:latest",
     "memory": 64,
     "port": 5000
   },
