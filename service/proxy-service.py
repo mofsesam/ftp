@@ -1,3 +1,5 @@
+import sys
+import traceback
 from flask import Flask, request, Response, abort, send_file
 from functools import wraps
 import json
@@ -9,6 +11,20 @@ from ftplib import FTP_TLS
 import ssl
 
 app = Flask(__name__)
+
+hostname_env = os.environ.get("HOSTNAME")
+username_env = os.environ.get("USERNAME")
+password_env = os.environ.get("PASSWORD")
+protocol_env = os.environ.get("PROTOCOL")
+if protocol_env:
+    protocol_env = protocol_env.upper()
+
+def log_exception():
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    logger.error(
+        traceback.format_exception(exc_type,
+                                   exc_value,
+                                   exc_traceback))
 
 class MyFTP_TLS(FTP_TLS):
     """Explicit FTPS, with shared TLS session"""
@@ -44,6 +60,9 @@ class FTPClient():
         self.client.retrbinary('RETR {}'.format(fpath), r.write)
         return r
 
+    def write(self, path, stream, args):
+         self.client.storlines('STOR {}'.format(path), BytesIO(stream))
+
     def get_content(self, fpath):
         """return file as string"""
         resp = self.get_stream(fpath)
@@ -65,15 +84,38 @@ class FTPSClient(FTPClient):
         except Exception as e:
             raise e
 
+def get_session(protocol, host, user, pwd):
+    session = None
+    if protocol == "FTP":
+        session = FTPClient(user, pwd, host)
+    elif protocol == "FTPS":
+        session = FTPSClient(user, pwd, host)
+    return session
 
-def get_var(var):
-    envvar = None
-    if var.upper() in os.environ:
-        envvar = os.environ[var.upper()]
+def get_connection_spec(varname, auth):
+    host = hostname_env
+    protocol = protocol_env
+    if auth:
+        username = auth.username
+        password = auth.password
     else:
-        envvar = request.args.get(var)
-    logger.debug("Setting %s = %s" % (var, envvar))
-    return envvar
+        username = username_env
+        password = password_env
+
+    if varname:
+        conn_url = None
+        if varname.upper() in os.environ:
+            conn_url = os.environ[varname.upper()]
+        elif request.args.get(varname):
+            conn_url = request.args.get(varname)
+        if conn_url.startswith('ftp://'):
+            protocol = "FTP"
+            host = conn_url[6:]
+        elif conn_url.startswith('ftps://'):
+            protocol = "FTPS"
+            host = conn_url[7:]
+    logger.debug("Resolved url to host=%s, protocol= %s" % (host, protocol))
+    return protocol, host, username, password
 
 def authenticate():
     """Sends a 401 response that enables basic auth"""
@@ -92,23 +134,22 @@ def requires_auth(f):
 
     return decorated
 
-@app.route('/<sys_id>/file', methods=['GET'])
+@app.route('/<path>/file', methods=['GET'])
 @requires_auth
-def get_file(sys_id):
+def get_file(path=None):
     fpath = request.args.get('fpath')
     if not fpath:
         return abort(400, "Missing the mandatory parameter.")
-    auth = request.authorization
-    sys_url = get_var(sys_id)
-    if not sys_url:
-        return abort(400, "Cannot find the endpoint url for {}".format(sys_id))
+    protocol, host, username, password = get_connection_spec(path, request.authorization)
+    if not host and not protocol:
+        return abort(400, "Cannot find the endpoint url for {}".format(path))
     f_stream = None
     client = None
     try:
-        if sys_url.startswith('ftp://'):
-                client = FTPClient(auth.username, auth.password, sys_url[6:])
-        elif sys_url.startswith('ftps://'):
-                client = FTPSClient(auth.username, auth.password, sys_url[7:])
+        if protocol == "FTP":
+            client = FTPClient(username, password, host)
+        elif protocol == "FTPS":
+            client = FTPSClient(username, password, host)
         else:
             return abort(400, "Not supported protocal.")
         f_stream = client.get_stream(fpath)
@@ -117,8 +158,46 @@ def get_file(sys_id):
         client.quit()
         return send_file(f_stream, attachment_filename=f_name, as_attachment=True)
     except Exception as e:
+        log_exception()
         return abort(500, e)
 
+@app.route('/<path:path>', methods=['GET'])
+def get_file2(path=None):
+    protocol, host, username, password = get_connection_spec(None, request.authorization)
+    if not (protocol and host):
+        return abort(500, "Missing protocol and/or host".format(protocol, host))
+    if not (username and password):
+        return abort(500, "Missing username and/or password")
+    try:
+        session = get_session(protocol, host, username, password)
+        f_stream = session.get_stream(path)
+        f_stream.seek(0)
+        f_name = path.split('/')[-1]
+        session.quit()
+        return send_file(f_stream, attachment_filename=f_name, as_attachment=True)
+    except Exception as e:
+        log_exception()
+        return abort(500, e)
+
+@app.route('/<path:path>', methods=['POST'])
+def post_file(path):
+    accepted_mimetypes = ['text/csv', 'text/xml', 'application/xml', 'application/json']
+    if request.mimetype not in accepted_mimetypes:
+        return abort(400, "Mimetype not accepted")
+    protocol, host, username, password = get_connection_spec(None, request.authorization)
+    if not (protocol and host):
+        return abort(500, "Missing protocol and/or host".format(protocol, host))
+    if not (username and password):
+        return abort(500, "Missing username and/or password")
+    try:
+        session = get_session(protocol, host, username, password)
+        stream = request.stream
+        f_stream = session.write(path, stream.read(), request.args)
+        session.quit()
+        return Response(response=json.dumps({"is_success":True, "message": "OK"}), content_type='application/json; charset=utf-8')
+    except Exception as e:
+        log_exception()
+        return abort(500, e)
 
 if __name__ == '__main__':
     # Set up logging
@@ -143,4 +222,5 @@ if __name__ == '__main__':
         logger.setlevel(logging.INFO)
         logger.info("Define an unsupported loglevel. Using the default level: INFO.")
 
-    app.run(threaded=True, debug=True, host='0.0.0.0')
+    logger.info("Running on %s://%s@%s" % (protocol_env, username_env, hostname_env))
+    app.run(threaded=True, debug=True, host='0.0.0.0', port=int(os.environ.get('PORT',5001)))
