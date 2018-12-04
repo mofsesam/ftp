@@ -1,3 +1,5 @@
 venv
 test/data/fetched*
-envlist
+envlist*
+__pycache__
+*.pyc
