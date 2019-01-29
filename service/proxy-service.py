@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from ftplib import FTP, FTP_TLS, error_perm
-from ftp_client import FTPClient, FTPSClient
+from ftp_client import FTPClient, FTPSClient, SFTPClient
 
 app = Flask(__name__)
 
@@ -19,20 +19,14 @@ if protocol_env:
     protocol_env = protocol_env.upper()
 
 
-def log_exception():
-    exc_type, exc_value, exc_traceback = sys.exc_info()
-    logger.error(
-        traceback.format_exception(exc_type,
-                                   exc_value,
-                                   exc_traceback))
-
-
 def get_session(protocol, host, user, pwd):
     session = None
     if protocol == "FTP":
         session = FTPClient(user, pwd, host)
     elif protocol == "FTPS":
         session = FTPSClient(user, pwd, host)
+    elif protocol == "SFTP":
+        session = SFTPClient(user, pwd, host)
     return session
 
 
@@ -65,8 +59,7 @@ def authenticate():
     """Sends a 401 response that enables basic auth"""
     return Response(
         "Could not verify your access level for that URL.\n"
-        "You have to login with proper credentials",
-        401,
+        "You have to login with proper credentials", 401,
         {"WWW-Authenticate": "Basic realm=\"Login Required\""})
 
 
@@ -101,6 +94,8 @@ def get_file(path=None):
             client = FTPClient(username, password, host)
         elif protocol == "FTPS":
             client = FTPSClient(username, password, host)
+        elif protocol == "SFTP":
+            client = SFTPClient(username, password, host)
         else:
             return abort(400, "Not supported protocal.")
         f_stream = client.get_stream(fpath)
@@ -108,11 +103,9 @@ def get_file(path=None):
         f_name = fpath.split("/")[-1]
         client.quit()
         return send_file(
-            f_stream,
-            attachment_filename=f_name,
-            as_attachment=True)
+            f_stream, attachment_filename=f_name, as_attachment=True)
     except Exception as e:
-        log_exception()
+        logger.exception(e)
         return abort(500, e)
 
 
@@ -126,12 +119,14 @@ def abort(response_code, message):
         content_type="application/json; charset=utf-8")
 
 
-def fix_path(path):
+def fix_path(path, protocol):
     slash = "/"
     if path[0:1] != slash:
         path = slash + path
     if path[-1] == slash:
         path = path[0:-1]
+    if path == "" and protocol == "SFTP":
+        path = "."
     return path
 
 
@@ -144,15 +139,15 @@ def get_file2(path=""):
     ignore_move_to_errors = request.args.get("ignore_move_to_errors",
                                              "").lower() == "1"
     if not (protocol and host):
-        return abort(500,
-                     "Missing protocol and/or host".format(protocol,
-                                                           host))
+        return abort(500, "Missing protocol and/or host".format(
+            protocol, host))
     if not (username and password):
         return abort(500, "Missing username and/or password")
 
-    session = get_session(protocol, host, username, password)
+    session = None
     try:
-        f_path = fix_path(path)
+        session = get_session(protocol, host, username, password)
+        f_path = fix_path(path, protocol)
         f_type = session.get_type(f_path)
         if f_type == "DIR":
             return Response(
@@ -166,57 +161,52 @@ def get_file2(path=""):
                 move_to_result = None
                 try:
                     move_to_result = session.rename(f_path, move_to)
-                    logger.info(
-                        "renamed %s to %s with result %s" % (f_path,
-                                                             move_to,
-                                                             move_to_result))
+                    logger.info("renamed %s to %s with result %s" %
+                                (f_path, move_to, move_to_result))
                 except Exception as e:
-                    logger.error("failed to rename %s to %s" % (f_path,
-                                                                move_to))
+                    logger.error(
+                        "failed to rename %s to %s" % (f_path, move_to))
                     if not ignore_move_to_errors:
                         raise e
         else:
             return abort(404, "NOT FOUND")
         return send_file(
-            f_stream,
-            attachment_filename=f_name,
-            as_attachment=True)
+            f_stream, attachment_filename=f_name, as_attachment=True)
     except Exception as e:
-        log_exception()
+        logger.exception(e)
         return abort(500, str(e))
     finally:
-        session.quit()
+        if session:
+            session.quit()
 
 
 @app.route("/<path:path>", methods=["POST"])
 def post_file(path):
     accepted_mimetypes = [
-        "text/csv",
-        "text/xml",
-        "application/xml",
-        "application/json"
+        "text/csv", "text/xml", "application/xml", "application/json"
     ]
     if request.mimetype not in accepted_mimetypes:
         return abort(400, "Mimetype not accepted")
     protocol, host, username, password = get_connection_spec(
         None, request.authorization)
     if not (protocol and host):
-        return abort(200,
-                     "Missing protocol and/or host".format(protocol,
-                                                           host))
+        return abort(200, "Missing protocol and/or host".format(
+            protocol, host))
     if not (username and password):
         return abort(500, "Missing username and/or password")
 
-    session = get_session(protocol, host, username, password)
+    session = None
     try:
+        session = get_session(protocol, host, username, password)
         stream = request.data
         f_stream = session.put(path, stream)
         return abort(200, f_stream)
     except Exception as e:
-        log_exception()
+        logger.exception(e)
         return abort(500, str(e))
     finally:
-        session.quit()
+        if session:
+            session.quit()
 
 
 if __name__ == "__main__":
@@ -232,13 +222,10 @@ if __name__ == "__main__":
     loglevel = os.environ.get("LOGLEVEL", "INFO")
     logger.setLevel(loglevel)
 
-    logger.info("Running on %s://%s@%s with loglevel=%s" % (protocol_env,
-                                                            username_env,
-                                                            hostname_env,
-                                                            loglevel))
+    logger.info("Running on %s://%s@%s with loglevel=%s" %
+                (protocol_env, username_env, hostname_env, loglevel))
     app.run(
         threaded=True,
         debug=True,
         host="0.0.0.0",
-        port=int(os.environ.get("PORT",
-                                5000)))
+        port=int(os.environ.get("PORT", 5000)))

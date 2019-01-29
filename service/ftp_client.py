@@ -2,6 +2,8 @@ from io import StringIO, BytesIO
 from ftplib import FTP, FTP_TLS, error_perm
 import logging
 import ssl
+import paramiko
+import stat
 
 logger = logging.getLogger("http-ftp-proxy-microservice")
 
@@ -16,8 +18,7 @@ class MyFTP_TLS(FTP_TLS):
             if isinstance(self.sock, ssl.SSLSocket):
                 session = self.sock.session
             conn = self.context.wrap_socket(
-                conn,
-                server_hostname=self.host,
+                conn, server_hostname=self.host,
                 session=session)  # this is the fix
         return conn, size
 
@@ -106,3 +107,67 @@ class FTPSClient(FTPClient):
             self.client.set_pasv(True)
         except Exception as e:
             raise e
+
+
+class SFTPClient():
+    """SFTP Client"""
+
+    def __init__(self, user, pwd, ftp_url):
+        logger.debug("sftp connecting to {} with {}".format(ftp_url, user))
+        try:
+            self.transport = paramiko.Transport((ftp_url, 22))
+            self.transport.connect(username=user, password=pwd)
+            self.client = paramiko.SFTPClient.from_transport(self.transport)
+        except Exception as e:
+            raise e
+
+    def get_stream(self, fpath):
+        """return file as string"""
+        r = BytesIO()
+        resp = self.client.getfo(fpath, r)
+        return r
+
+    def put(self, fpath, stream):
+        resp = self.client.putfo(BytesIO(stream), fpath)
+        return str(resp)
+
+    def get_type(self, fpath):
+        type = None
+        file_stat = None
+        try:
+            file_stat = self.client.stat(fpath).st_mode
+            if stat.S_ISDIR(file_stat):
+                type = "DIR"
+            else:
+                type = "FILE"
+        except Exception as e:
+            if fpath == "":
+                type = "DIR"
+            else:
+                type = None
+        return type
+
+    def dir(self, fpath):
+        listing_2return = []
+        listing_retrieved = []
+        try:
+            listing_retrieved = self.client.listdir(fpath)
+        except IOError as e:
+            None
+        if fpath == ".":
+            dir_path = ""
+        else:
+            dir_path = fpath + "/"
+        for file in listing_retrieved:
+            full_path = dir_path + file
+            type = self.get_type(full_path)
+            listing_2return.append({"filename": full_path, "type": type})
+            if type == "DIR":
+                listing_2return += self.dir(full_path)
+        return listing_2return
+
+    def rename(self, fromname, toname):
+        self.client.rename(fromname, toname)
+
+    def quit(self):
+        self.client.close()
