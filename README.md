@@ -24,7 +24,7 @@ can be used to
    * Restarting with stat
    * ...
 
-The service listens on port 5001 unless specified otherwise in envvar 'HOST'.
+The service listens on port 5000 unless specified otherwise in envvar 'HOST'.
 
 ```
 Then you can start using the service
@@ -96,7 +96,7 @@ An example of SESAM system config:
    * Restarting with stat
    * ...
 
-The service listens on port 5001 unless specified otherwise in envvar 'HOST'.
+The service listens on port 5000 unless specified otherwise in envvar 'HOST'.
 
 ```
 Then you can start using the service
