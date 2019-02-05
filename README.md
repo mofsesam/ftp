@@ -20,23 +20,23 @@ can be used to
   pip install -r requirements.txt
 
   python proxy-service.py
-   * Running on http://0.0.0.0:5001/ (Press CTRL+C to quit)
+   * Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
    * Restarting with stat
    * ...
 
-The service listens on port 5001 unless specified otherwise in envvar 'HOST'.
+The service listens on port 5000 unless specified otherwise in envvar 'HOST'.
 
 ```
 Then you can start using the service
 
 ```
-curl -X POST http://localhost:5001/test.json -d @test.json -H 'content-type:application/json'
-curl -X POST http://localhost:5001/test.csv --data-binary @test.csv -H 'content-type:text/csv'
-curl -X POST http://localhost:5001/test.xml -d @test.xml -H 'content-type:application/xml'
+curl -X POST http://localhost:5000/test.json -d @test.json -H 'content-type:application/json'
+curl -X POST http://localhost:5000/test.csv --data-binary @test.csv -H 'content-type:text/csv'
+curl -X POST http://localhost:5000/test.xml -d @test.xml -H 'content-type:application/xml'
 
-curl -X GET http://localhost:5001/test.json
-curl -X GET http://localhost:5001/test.csv
-curl -X GET http://localhost:5001/test.xml
+curl -X GET http://localhost:5000/test.json
+curl -X GET http://localhost:5000/test.csv
+curl -X GET http://localhost:5000/test.xml
 ```
 
 #### How To use in SESAM
@@ -92,17 +92,17 @@ An example of SESAM system config:
   pip install -r requirements.txt
 
   python proxy-service.py
-   * Running on http://0.0.0.0:5001/ (Press CTRL+C to quit)
+   * Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
    * Restarting with stat
    * ...
 
-The service listens on port 5001 unless specified otherwise in envvar 'HOST'.
+The service listens on port 5000 unless specified otherwise in envvar 'HOST'.
 
 ```
 Then you can start using the service
 
 ```
-curl -X GET http://localhost:5001/ftpurl/file?fpath=test.json&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
-curl -X GET http://localhost:5001/ftpurl/file?fpath=test.csv&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
-curl -X GET http://localhost:5001/ftpurl/file?fpath=test.xml&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
+curl -X GET http://localhost:5000/ftpurl/file?fpath=test.json&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
+curl -X GET http://localhost:5000/ftpurl/file?fpath=test.csv&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
+curl -X GET http://localhost:5000/ftpurl/file?fpath=test.xml&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
 ```
