@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, abort, send_file
+from flask import Flask, request, Response, abort, send_file, make_response
 from functools import wraps
 import json
 import logging
@@ -36,6 +36,10 @@ class FTPClient():
 
     def test(self):
         return self.client.retrlines('LIST')
+
+    def get_size(self, fpath):
+        """return a file size"""
+        return self.client.size(fpath)
 
     def get_stream(self, fpath):
         """return a file stream"""
@@ -114,8 +118,11 @@ def get_file(sys_id):
         f_stream = client.get_stream(fpath)
         f_stream.seek(0)
         f_name = fpath.split('/')[-1]
+        size = client.get_size(fpath)
         client.quit()
-        return send_file(f_stream, attachment_filename=f_name, as_attachment=True)
+        response = make_response(send_file(f_stream, attachment_filename=f_name, as_attachment=True))
+        response.headers['Content-Length'] = size
+        return response
     except Exception as e:
         return abort(500, e)
 
@@ -142,5 +149,4 @@ if __name__ == '__main__':
     else:
         logger.setlevel(logging.INFO)
         logger.info("Define an unsupported loglevel. Using the default level: INFO.")
-
     app.run(threaded=True, debug=True, host='0.0.0.0')
