@@ -7,7 +7,9 @@ can be used to
  * download files from FTP via http requests
  * upload xml, csv, json files to FTP via http requests
 
-
+### Notes
+ * access logs are enabled when loglevel is set to at least 'INFO'
+ 
 #### Running locally in a virtual environment
 ```
   cd service
