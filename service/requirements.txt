@@ -1,3 +1,4 @@
 Flask==1.0.2
 paramiko==2.4.2
 cherrypy==18.1.1
+paste==3.0.8

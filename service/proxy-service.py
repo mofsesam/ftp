@@ -3,7 +3,7 @@ import traceback
 from flask import Flask, request, Response, send_file
 from functools import wraps
 import json
-import logging
+import logger as log
 import os
 from ftplib import FTP, FTP_TLS, error_perm
 from ftp_client import FTPClient, FTPSClient, SFTPClient
@@ -17,6 +17,12 @@ protocol_env = os.environ.get("PROTOCOL")
 
 if protocol_env:
     protocol_env = protocol_env.upper()
+
+# Set up logging
+logger = log.init_logger("http-ftp-proxy-microservice",
+                         os.environ.get("LOGLEVEL", "INFO"))
+logger.info("Running on %s://%s@%s with loglevel=%s" %
+            (protocol_env, username_env, hostname_env, log.get_level_name(logger.level)))
 
 
 def get_session(protocol, host, user, pwd):
@@ -210,20 +216,7 @@ def post_file(path):
 
 
 if __name__ == "__main__":
-    # Set up logging
-    format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logger = logging.getLogger("http-ftp-proxy-microservice")
 
-    # Log to stdout
-    stdout_handler = logging.StreamHandler()
-    stdout_handler.setFormatter(logging.Formatter(format_string))
-    logger.addHandler(stdout_handler)
-
-    loglevel = os.environ.get("LOGLEVEL", "INFO")
-    logger.setLevel(loglevel)
-
-    logger.info("Running on %s://%s@%s with loglevel=%s" %
-                (protocol_env, username_env, hostname_env, loglevel))
     if os.environ.get("WEBFRAMEWORK", "").lower() == "flask":
         app.run(
             threaded=True,
@@ -232,6 +225,8 @@ if __name__ == "__main__":
             port=int(os.environ.get("PORT", 5000)))
     else:
         import cherrypy
+
+        app = log.add_access_logger(app, logger)
         cherrypy.tree.graft(app, '/')
 
         # Set the configuration of the web server to production mode
