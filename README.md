@@ -9,7 +9,16 @@ can be used to
 
 ### Notes
  * access logs are enabled when loglevel is set to at least 'INFO'
- 
+
+
+### Query Parameters
+| CONFIG_NAME        | DESCRIPTION           | IS_REQUIRED  |DEFAULT_VALUE|
+| -------------------|:---------------------:|:------------:|:-----------:|
+| move_to | path with filename to which the downloaded file will be moved to. | no | n/a |
+| ignore_move_to_errors | set to '1' to ignore errors in 'move to' operation, any other value otherwise  | no | n/a |
+| ignore_404_errors | set to '1' so that 404 errors will be retured as 204 so that the pipe does not receive failure | no | n/a |
+
+
 #### Running locally in a virtual environment
 ```
   cd service
@@ -67,9 +76,12 @@ An example of SESAM system config:
 ```
 
 
-##### Alternatively you can use the sevice as a generic service for any ftp server
+##### Alternatively you can use the service as a generic service for any ftp server
 
-An example of SESAM system config:
+(DEPRECATED)
+
+
+An example of system config:
 
 ```json
 {
@@ -77,6 +89,9 @@ An example of SESAM system config:
   "type": "system:microservice",
   "connect_timeout": 60,
   "docker": {
+    "environment": {
+      "sys_id": "ftp://ftp_server_url"
+    },
     "image": "sesamcommunity/ftp:latest",
     "memory": 64,
     "port": 5000
@@ -86,25 +101,9 @@ An example of SESAM system config:
 }
 ```
 
-#### Running locally in a virtual environment
-```
-  cd service
-  virtualenv --python=python3 venv
-  . venv/bin/activate
-  pip install -r requirements.txt
+This microservice should receive some http request,
+such as "http://sesam-datasource-ftp:5000/{sys_id}/file?fpath={fpath}".
 
-  python proxy-service.py
-   * Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
-   * Restarting with stat
-   * ...
-
-The service listens on port 5000 unless specified otherwise in envvar 'HOST'.
-
-```
-Then you can start using the service
-
-```
-curl -X GET http://localhost:5000/ftpurl/file?fpath=test.json&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
-curl -X GET http://localhost:5000/ftpurl/file?fpath=test.csv&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
-curl -X GET http://localhost:5000/ftpurl/file?fpath=test.xml&ftp_url=ftp://loaclhost -u myftpuser:myftppassword
-```
+{sys_id} should be an environment variable that contains the ftp server url.
+If you dont want to define {sys_id} in the environment variables.
+You also can use this url pattern "http://sesam-datasource-ftp:5000/{sys_id}/file?fpath={fpath}&sys_id=ftp://ftp_server_url".
