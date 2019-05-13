@@ -144,6 +144,7 @@ def get_file2(path=""):
     move_to = request.args.get("move_to")
     ignore_move_to_errors = request.args.get("ignore_move_to_errors",
                                              "").lower() == "1"
+    ignore_404_errors = request.args.get("ignore_404_errors", "").lower() == "1"
     if not (protocol and host):
         return abort(500, "Missing protocol and/or host".format(
             protocol, host))
@@ -175,7 +176,10 @@ def get_file2(path=""):
                     if not ignore_move_to_errors:
                         raise e
         else:
-            return abort(404, "NOT FOUND")
+            if ignore_404_errors:
+                return abort(204, "")
+            else:
+                return abort(404, "NOT FOUND")
         return send_file(
             f_stream, attachment_filename=f_name, as_attachment=True)
     except Exception as e:
