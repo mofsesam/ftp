@@ -1,6 +1,4 @@
-import sys
-import traceback
-from flask import Flask, request, Response, send_file
+from flask import Flask, request, Response, abort, send_file
 from functools import wraps
 import json
 import logger as log
@@ -108,8 +106,7 @@ def get_file(path=None):
         f_stream.seek(0)
         f_name = fpath.split("/")[-1]
         client.quit()
-        return send_file(
-            f_stream, attachment_filename=f_name, as_attachment=True)
+        return send_file(f_stream, attachment_filename=f_name, as_attachment=True)
     except Exception as e:
         logger.exception(e)
         return abort(500, e)
@@ -177,7 +174,10 @@ def get_file2(path=""):
                         raise e
         else:
             if ignore_404_errors:
-                return abort(204, "")
+                return Response(
+                    response=json.dumps([]),
+                    status=200,
+                    content_type="application/json; charset=utf-8")
             else:
                 return abort(404, "NOT FOUND")
         return send_file(

@@ -3,20 +3,36 @@
 
 sesam Http->Ftp microservice
 
+
+Go to Alternative Setup section below to read about the old/depricated setup
+
 can be used to
- * download files from FTP via http requests
- * upload xml, csv, json files to FTP via http requests
+ * download files via http requests
+ * upload xml, csv, json files via http requests
+ * supports FTP/FTPS/SFTP
 
 ### Notes
  * access logs are enabled when loglevel is set to at least 'INFO'
 
 
+ ### Environment Config variables
+ | CONFIG_NAME        | DESCRIPTION           | IS_REQUIRED  |DEFAULT_VALUE|
+ | -------------------|:---------------------|:------------:|:-----------:|
+ | HOSTNAME | hostname | yes | n/a |
+ | USERNAME | ftp username  | yes | n/a |
+ | PASSWORD | ftp user's password | yes | n/a |
+ | PROTOCOL | one of FTP/FTPS/SFTP | yes | n/a |
+ | LOGLEVEL | logging level of the service. Access logs are enabled from INFO level on | no | 'INFO' |
+ | PORT | the port that the service will serve on | no | 5000 |
+ | WEBFRAMEWORK | set to 'flask' if you want FLASK as the webframework, otherwise it will run on Cherrypy as WSGI | no | n/a |
+
+
 ### Query Parameters
-| CONFIG_NAME        | DESCRIPTION           | IS_REQUIRED  |DEFAULT_VALUE|
-| -------------------|:---------------------:|:------------:|:-----------:|
-| move_to | path with filename to which the downloaded file will be moved to. | no | n/a |
+| PARAMETER_NAME        | DESCRIPTION           | IS_REQUIRED  |DEFAULT_VALUE|
+| -------------------|:---------------------|:------------:|:-----------:|
+| move_to | path including filename to which the downloaded file will be moved to. | no | n/a |
 | ignore_move_to_errors | set to '1' to ignore errors in 'move to' operation, any other value otherwise  | no | n/a |
-| ignore_404_errors | set to '1' so that 404 errors will be retured as 204 so that the pipe does not receive failure | no | n/a |
+| ignore_404_errors | set to '1' so that 404 responses will be retured as 204 so that the pipe does not receive failure | no | n/a |
 
 
 #### Running locally in a virtual environment
@@ -75,8 +91,8 @@ An example of SESAM system config:
 }
 ```
 
-
-##### Alternatively you can use the service as a generic service for any ftp server
+---
+#### Alternative Setup: you can use the service as a generic service for any ftp server
 
 (DEPRECATED)
 

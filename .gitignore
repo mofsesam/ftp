@@ -1,5 +1,5 @@
 venv
-test/data/fetched*
+test
 env*list*
 __pycache__
 *.pyc
