@@ -174,7 +174,10 @@ def get_file2(path=""):
                         raise e
         else:
             if ignore_404_errors:
-                return abort(204, "")
+                return Response(
+                    response=json.dumps([]),
+                    status=200,
+                    content_type="application/json; charset=utf-8")
             else:
                 return abort(404, "NOT FOUND")
         return send_file(
