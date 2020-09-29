@@ -1,90 +1,71 @@
-from flask import Flask, request, Response, abort, send_file, make_response
+from flask import Flask, request, Response, abort, send_file
 from functools import wraps
 import json
-import logging
+import logger as log
 import os
-from io import StringIO, BytesIO
-from ftplib import FTP
-from ftplib import FTP_TLS
-import ssl
+from ftplib import FTP, FTP_TLS, error_perm
+from ftp_client import FTPClient, FTPSClient, SFTPClient
 
 app = Flask(__name__)
 
-class MyFTP_TLS(FTP_TLS):
-    """Explicit FTPS, with shared TLS session"""
-    def ntransfercmd(self, cmd, rest=None):
-        conn, size = FTP.ntransfercmd(self, cmd, rest)
-        if self._prot_p:
-            session = self.sock.session
-            if isinstance(self.sock, ssl.SSLSocket):
-                session = self.sock.session
-            conn = self.context.wrap_socket(conn,
-                                            server_hostname=self.host,
-                                            session=session)  # this is the fix
-        return conn, size
+hostname_env = os.environ.get("HOSTNAME")
+username_env = os.environ.get("USERNAME")
+password_env = os.environ.get("PASSWORD")
+protocol_env = os.environ.get("PROTOCOL")
+
+if protocol_env:
+    protocol_env = protocol_env.upper()
+
+# Set up logging
+logger = log.init_logger("http-ftp-proxy-microservice",
+                         os.environ.get("LOGLEVEL", "INFO"))
+logger.info("Running on %s://%s@%s with loglevel=%s" %
+            (protocol_env, username_env, hostname_env, log.get_level_name(logger.level)))
 
 
-class FTPClient():
-    """FTP Client"""
-    def __init__(self, user, pwd, ftp_url):
-        logger.debug("ftp connecting to {} with {}:{}".format(ftp_url, user, pwd))
-        try:
-            self.client = FTP(ftp_url)
-            self.client.login(user, pwd)
-        except Exception as e:
-            raise e
-
-    def test(self):
-        return self.client.retrlines('LIST')
-
-    def get_size(self, fpath):
-        """return a file size"""
-        return self.client.size(fpath)
-
-    def get_stream(self, fpath):
-        """return a file stream"""
-        r = BytesIO()
-        logger.debug("fetching {}".format(fpath))
-        self.client.retrbinary('RETR {}'.format(fpath), r.write)
-        return r
-
-    def get_content(self, fpath):
-        """return file as string"""
-        resp = self.get_stream(fpath)
-        return resp.getvalue()
-
-    def quit(self):
-        self.client.quit()
+def get_session(protocol, host, user, pwd):
+    session = None
+    if protocol == "FTP":
+        session = FTPClient(user, pwd, host)
+    elif protocol == "FTPS":
+        session = FTPSClient(user, pwd, host)
+    elif protocol == "SFTP":
+        session = SFTPClient(user, pwd, host)
+    return session
 
 
-class FTPSClient(FTPClient):
-    """FTPS Client"""
-    def __init__(self, user, pwd, ftp_url):
-        logger.debug("ftps connecting to {} with {}:{}".format(ftp_url, user, pwd))
-        try:
-            self.client = MyFTP_TLS(ftp_url)
-            self.client.login(user, pwd)
-            self.client.prot_p()
-            self.client.set_pasv(True)
-        except Exception as e:
-            raise e
-
-
-def get_var(var):
-    envvar = None
-    if var.upper() in os.environ:
-        envvar = os.environ[var.upper()]
+def get_connection_spec(varname, auth):
+    host = hostname_env
+    protocol = protocol_env
+    if auth:
+        username = auth.username
+        password = auth.password
     else:
-        envvar = request.args.get(var)
-    logger.debug("Setting %s = %s" % (var, envvar))
-    return envvar
+        username = username_env
+        password = password_env
+
+    if varname:
+        conn_url = None
+        if varname.upper() in os.environ:
+            conn_url = os.environ[varname.upper()]
+        elif request.args.get(varname):
+            conn_url = request.args.get(varname)
+        if conn_url.startswith("ftp://"):
+            protocol = "FTP"
+            host = conn_url[6:]
+        elif conn_url.startswith("ftps://"):
+            protocol = "FTPS"
+            host = conn_url[7:]
+    return protocol, host, username, password
+
 
 def authenticate():
     """Sends a 401 response that enables basic auth"""
     return Response(
-        'Could not verify your access level for that URL.\n'
-        'You have to login with proper credentials', 401,
-        {'WWW-Authenticate': 'Basic realm="Login Required"'})
+        "Could not verify your access level for that URL.\n"
+        "You have to login with proper credentials", 401,
+        {"WWW-Authenticate": "Basic realm=\"Login Required\""})
+
 
 def requires_auth(f):
     @wraps(f)
@@ -96,57 +77,171 @@ def requires_auth(f):
 
     return decorated
 
-@app.route('/<sys_id>/file', methods=['GET'])
+
+@app.route("/<path>/file", methods=["GET"])
 @requires_auth
-def get_file(sys_id):
-    fpath = request.args.get('fpath')
+def get_file(path=None):
+    """
+    this route and method is kept for backward compatibility.
+    """
+    fpath = request.args.get("fpath")
     if not fpath:
         return abort(400, "Missing the mandatory parameter.")
-    auth = request.authorization
-    sys_url = get_var(sys_id)
-    if not sys_url:
-        return abort(400, "Cannot find the endpoint url for {}".format(sys_id))
+    protocol, host, username, password = get_connection_spec(
+        path, request.authorization)
+    if not host and not protocol:
+        return abort(400, "Cannot find the endpoint url for {}".format(path))
     f_stream = None
     client = None
     try:
-        if sys_url.startswith('ftp://'):
-                client = FTPClient(auth.username, auth.password, sys_url[6:])
-        elif sys_url.startswith('ftps://'):
-                client = FTPSClient(auth.username, auth.password, sys_url[7:])
+        if protocol == "FTP":
+            client = FTPClient(username, password, host)
+        elif protocol == "FTPS":
+            client = FTPSClient(username, password, host)
+        elif protocol == "SFTP":
+            client = SFTPClient(username, password, host)
         else:
             return abort(400, "Not supported protocal.")
         f_stream = client.get_stream(fpath)
         f_stream.seek(0)
-        f_name = fpath.split('/')[-1]
-        size = client.get_size(fpath)
+        f_name = fpath.split("/")[-1]
         client.quit()
-        response = make_response(send_file(f_stream, attachment_filename=f_name, as_attachment=True))
-        response.headers['Content-Length'] = size
-        return response
+        return send_file(f_stream, attachment_filename=f_name, as_attachment=True)
     except Exception as e:
+        logger.exception(e)
         return abort(500, e)
 
 
-if __name__ == '__main__':
-    # Set up logging
-    format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    logger = logging.getLogger('http-ftp-proxy-microservice')
+def abort(response_code, message):
+    return Response(
+        response=json.dumps({
+            "is_success": (response_code == 200),
+            "message": message
+        }),
+        status=response_code,
+        content_type="application/json; charset=utf-8")
 
-    # Log to stdout
-    stdout_handler = logging.StreamHandler()
-    stdout_handler.setFormatter(logging.Formatter(format_string))
-    logger.addHandler(stdout_handler)
 
-    loglevel = os.environ.get("LOGLEVEL", "INFO")
-    if "INFO" == loglevel.upper():
-        logger.setLevel(logging.INFO)
-    elif "DEBUG" == loglevel.upper():
-        logger.setLevel(logging.DEBUG)
-    elif "WARN" == loglevel.upper():
-        logger.setLevel(logging.WARN)
-    elif "ERROR" == loglevel.upper():
-        logger.setLevel(logging.ERROR)
+def fix_path(path, protocol):
+    slash = "/"
+    if path[0:1] != slash:
+        path = slash + path
+    if path[-1] == slash:
+        path = path[0:-1]
+    if path == "" and protocol == "SFTP":
+        path = "."
+    return path
+
+
+@app.route("/", methods=["GET"])
+@app.route("/<path:path>", methods=["GET"])
+def get_file2(path=""):
+    protocol, host, username, password = get_connection_spec(
+        None, request.authorization)
+    move_to = request.args.get("move_to")
+    ignore_move_to_errors = request.args.get("ignore_move_to_errors",
+                                             "").lower() == "1"
+    ignore_404_errors = request.args.get("ignore_404_errors", "").lower() == "1"
+    if not (protocol and host):
+        return abort(500, "Missing protocol and/or host".format(
+            protocol, host))
+    if not (username and password):
+        return abort(500, "Missing username and/or password")
+
+    session = None
+    try:
+        session = get_session(protocol, host, username, password)
+        f_path = fix_path(path, protocol)
+        f_type = session.get_type(f_path)
+        if f_type == "DIR":
+            return Response(
+                response=json.dumps(session.dir(f_path)),
+                content_type="application/json; charset=utf-8")
+        elif f_type == "FILE":
+            f_stream = session.get_stream(f_path)
+            f_stream.seek(0)
+            f_name = f_path.split("/")[-1]
+            if move_to:
+                move_to_result = None
+                try:
+                    move_to_result = session.rename(f_path, move_to)
+                    logger.info("renamed %s to %s with result %s" %
+                                (f_path, move_to, move_to_result))
+                except Exception as e:
+                    logger.error(
+                        "failed to rename %s to %s" % (f_path, move_to))
+                    if not ignore_move_to_errors:
+                        raise e
+        else:
+            if ignore_404_errors:
+                return Response(
+                    response=json.dumps([]),
+                    status=200,
+                    content_type="application/json; charset=utf-8")
+            else:
+                return abort(404, "NOT FOUND")
+        return send_file(
+            f_stream, attachment_filename=f_name, as_attachment=True)
+    except Exception as e:
+        logger.exception(e)
+        return abort(500, str(e))
+    finally:
+        if session:
+            session.quit()
+
+
+@app.route("/<path:path>", methods=["POST"])
+def post_file(path):
+    accepted_mimetypes = [
+        "text/csv", "text/xml", "application/xml", "application/json"
+    ]
+    if request.mimetype not in accepted_mimetypes:
+        return abort(400, "Mimetype not accepted")
+    protocol, host, username, password = get_connection_spec(
+        None, request.authorization)
+    if not (protocol and host):
+        return abort(200, "Missing protocol and/or host".format(
+            protocol, host))
+    if not (username and password):
+        return abort(500, "Missing username and/or password")
+
+    session = None
+    try:
+        session = get_session(protocol, host, username, password)
+        stream = request.data
+        f_stream = session.put(path, stream)
+        return abort(200, f_stream)
+    except Exception as e:
+        logger.exception(e)
+        return abort(500, str(e))
+    finally:
+        if session:
+            session.quit()
+
+
+if __name__ == "__main__":
+
+    if os.environ.get("WEBFRAMEWORK", "").lower() == "flask":
+        app.run(
+            threaded=True,
+            debug=True,
+            host="0.0.0.0",
+            port=int(os.environ.get("PORT", 5000)))
     else:
-        logger.setlevel(logging.INFO)
-        logger.info("Define an unsupported loglevel. Using the default level: INFO.")
-    app.run(threaded=True, debug=True, host='0.0.0.0')
+        import cherrypy
+
+        app = log.add_access_logger(app, logger)
+        cherrypy.tree.graft(app, '/')
+
+        # Set the configuration of the web server to production mode
+        cherrypy.config.update({
+            'environment': 'production',
+            'engine.autoreload_on': False,
+            'log.screen': True,
+            'server.socket_port': int(os.environ.get("PORT", 5000)),
+            'server.socket_host': '0.0.0.0'
+        })
+
+        # Start the CherryPy WSGI web server
+        cherrypy.engine.start()
+        cherrypy.engine.block()
