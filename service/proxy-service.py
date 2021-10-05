@@ -12,13 +12,13 @@ hostname_env = os.environ.get("HOSTNAME")
 username_env = os.environ.get("USERNAME")
 password_env = os.environ.get("PASSWORD")
 protocol_env = os.environ.get("PROTOCOL")
+loglevel_env = os.environ.get("LOGLEVEL", "INFO")
 
 if protocol_env:
     protocol_env = protocol_env.upper()
 
 # Set up logging
-logger = log.init_logger("http-ftp-proxy-microservice",
-                         os.environ.get("LOGLEVEL", "INFO"))
+logger = log.init_logger("http-ftp-proxy-microservice", loglevel_env)
 logger.info("Running on %s://%s@%s with loglevel=%s" %
             (protocol_env, username_env, hostname_env, log.get_level_name(logger.level)))
 
@@ -31,6 +31,8 @@ def get_session(protocol, host, user, pwd):
         session = FTPSClient(user, pwd, host)
     elif protocol == "SFTP":
         session = SFTPClient(user, pwd, host)
+    if loglevel_env == "DBUG": 
+        session.set_debuglevel(2)
     return session
 
 
