@@ -31,7 +31,7 @@ def get_session(protocol, host, user, pwd):
         session = FTPSClient(user, pwd, host)
     elif protocol == "SFTP":
         session = SFTPClient(user, pwd, host)
-    if loglevel_env == "DBUG": 
+    if loglevel_env == "DEBUG": 
         session.set_debuglevel(2)
     return session
 
