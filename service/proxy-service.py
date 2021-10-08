@@ -32,7 +32,7 @@ def get_session(protocol, host, user, pwd):
     elif protocol == "SFTP":
         session = SFTPClient(user, pwd, host)
     if loglevel_env == "DEBUG": 
-        session.set_debuglevel(2)
+        session.set_debuglevel(1)
     return session
 
 

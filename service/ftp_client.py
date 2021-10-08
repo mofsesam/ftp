@@ -2,12 +2,16 @@ from io import StringIO, BytesIO
 from ftplib import FTP, FTP_TLS, error_perm
 import logging
 import ssl
+import os
 import paramiko
 import stat
 
+loglevel_env = os.environ.get("LOGLEVEL", "INFO")
+
 logger = logging.getLogger("http-ftp-proxy-microservice")
-
-
+paramikologger = logging.getLogger("paramiko")
+paramikologger.setLevel(loglevel_env)
+paramikologger.addHandler(logging.StreamHandler())
 class MyFTP_TLS(FTP_TLS):
     """Explicit FTPS, with shared TLS session"""
 
@@ -94,6 +98,9 @@ class FTPClient():
     def quit(self):
         self.client.quit()
 
+    def set_debuglevel(self,level: int):
+        self.client.set_debuglevel(level)
+
 
 class FTPSClient(FTPClient):
     """FTPS Client"""
@@ -171,3 +178,7 @@ class SFTPClient():
 
     def quit(self):
         self.client.close()
+    
+    def set_debuglevel(self,level: int):
+        pass # Use sepperat logger and os env LOGLEVEL
+
